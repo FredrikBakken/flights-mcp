@@ -1,0 +1,32 @@
+[project]
+name = "flights-mcp"
+version = "0.1.0"
+description = "An MCP server for searching Google Flights."
+readme = "README.md"
+authors = [
+    { name = "Fredrik Bakken", email = "Fredrik.Bakken@telenor.no" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "anyio>=4.15.1",
+    "fast-flights>=3.1.0",
+    "fastmcp>=4.0.3",
+]
+
+[project.scripts]
+flights-mcp = "flights_mcp:main"
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
