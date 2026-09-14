@@ -14,8 +14,10 @@ and [fast-flights](https://github.com/AWeirdDev/flights).
 | --- | --- |
 | `src/flights_mcp/server.py` | FastMCP instance, tool definitions, input validation |
 | `src/flights_mcp/models.py` | Pydantic response models, conversion from `fast_flights` dataclasses |
+| `src/flights_mcp/parsing.py` | Fault-tolerant replacement for upstream's payload parser |
 | `src/flights_mcp/fetching.py` | Custom HTTP fetcher that handles Google's consent redirect |
 | `tests/test_server.py` | Tests; no network access |
+| `tests/test_parsing.py` | Parser regression tests; no network access |
 
 ## Commands
 
@@ -67,6 +69,28 @@ implemented, verified non-functional against live data, and deliberately removed
 **Do not re-add one** without first confirming against the raw payload that
 Google actually returns results.
 
+### We parse the payload ourselves, on purpose
+
+`parsing.py` reimplements upstream's `parse_js`. **Do not switch back to
+`get_flights`**; call `parse(ConsentingFetcher(...).fetch_html(query))`.
+
+Upstream reads the price as `k[1][0][1]`, but Google ships some itineraries
+with an *empty* price block (`k[1][0] == []`) — seen on Widerøe TRD-BNN-OSL,
+where the fare is only sold as part of a connecting ticket. That raises
+`IndexError` and throws away the **entire** result set, including the dozens of
+valid itineraries around it.
+
+This presents as "some dates work, some don't", which looks exactly like rate
+limiting and is not. It is fully deterministic and reproducible per date. If
+you see intermittent `IndexError`s, **do not add a rate limiter or backoff** —
+check for an unparseable entry first.
+
+The parser degrades a bad field to `None` and skips a bad itinerary. It still
+rejects entries with no segments or no airport codes, since those mean we
+misread the structure rather than that Google returned something unusual.
+
+`Itinerary.price` is therefore legitimately `None` sometimes. Keep it optional.
+
 ### Times are local; never subtract them across legs
 
 `SimpleDatetime` values are local to their airport. Computing total duration as
@@ -117,3 +141,32 @@ Its parser is tightly coupled to Google's payload. After any bump, run a live
 search and confirm prices, airline names, durations, and segment details are
 still populated — the unit tests use fixtures and will not catch an upstream
 parser break.
+
+We do not use upstream's `parse`/`parse_js` (see above), but `parsing.py`
+borrows its positional indices and imports `_parse_time` and `ResultList`. A
+bump can therefore shift indices or move those private names, so diff
+`fast_flights/parser.py` against `parsing.py` after upgrading.
+
+## Releasing
+
+Not published to PyPI — that name belongs to an unrelated project. Releases are
+GitHub releases carrying a wheel, an sdist, and `SHA256SUMS`; the documented
+install is `uvx --from git+https://github.com/FredrikBakken/flights-mcp`.
+
+`.github/workflows/release.yml` triggers **only** on pushing a `v*` tag. Pushing
+commits to `main` runs CI but never Release, so if no release appeared, check
+first whether a tag actually exists (`git tag`) before debugging the workflow.
+
+The tag must equal `v$(uv version --short)`. The workflow hard-fails on a
+mismatch, so bump the version and commit it *before* tagging:
+
+```bash
+uv version --bump patch      # or minor / major
+# commit the pyproject.toml + uv.lock change, then:
+git tag -a v0.1.1 -m "flights-mcp v0.1.1"
+git push origin v0.1.1
+```
+
+Release notes are generated from merged PR titles, so keep those meaningful.
+To re-run a release without re-tagging, use the `workflow_dispatch` trigger and
+pass the existing tag.

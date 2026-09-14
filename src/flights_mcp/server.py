@@ -15,7 +15,6 @@ from fast_flights import (
     Passengers,
     Query,
     create_query,
-    get_flights,
 )
 from fast_flights.types import Currency, Language, SeatType, TripType
 from fastmcp import FastMCP
@@ -24,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from .fetching import ConsentingFetcher
 from .models import Itinerary, SearchResult, itinerary_from
+from .parsing import parse
 
 DEFAULT_MAX_RESULTS = 20
 
@@ -215,18 +215,26 @@ async def _run_search(
 
     try:
         results = await anyio.to_thread.run_sync(
-            lambda: get_flights(query, integration=ConsentingFetcher(proxy=proxy))
+            lambda: parse(ConsentingFetcher(proxy=proxy).fetch_html(query))
         )
     except FlightsNotFound as exc:
         raise ToolError(
             f"Google Flights returned no results for this search. See {url}"
         ) from exc
-    except Exception as exc:  # network failure, layout change, rate limiting…
+    except Exception as exc:  # network failure, blocked request, layout change
         raise ToolError(
             f"Could not fetch flights from Google Flights ({type(exc).__name__}: {exc}). "
-            "This is usually a transient network issue or rate limiting; retrying "
-            f"shortly often works. Search URL: {url}"
+            "Retrying once may help if this was a network blip, but repeated "
+            "failures mean the request was blocked or Google changed its page "
+            f"layout — retrying harder will not fix those. Search URL: {url}"
         ) from exc
+
+    if not results:
+        raise ToolError(
+            "Google Flights returned no itineraries for this search. Check the "
+            "route and date, and relax any filters such as `max_stops`, "
+            f"`airlines`, or `max_price`. Search URL: {url}"
+        )
 
     metadata = getattr(results, "metadata", None)
     itineraries = [itinerary_from(flight, metadata) for flight in results]
