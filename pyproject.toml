@@ -10,7 +10,7 @@ requires-python = ">=3.14"
 dependencies = [
     "anyio>=4.15.1",
     "fast-flights>=3.1.0",
-    "fastmcp>=4.0.3",
+    "fastmcp>=4.1.4",
 ]
 
 [project.scripts]
@@ -28,5 +28,5 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
+    "pytest>=9.2.0",
 ]
