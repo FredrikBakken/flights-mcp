@@ -26,7 +26,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
 
       - name: Check the tag matches the project version
         # A mismatch here would publish artifacts whose filenames disagree with
